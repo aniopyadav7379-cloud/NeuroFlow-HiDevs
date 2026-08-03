@@ -1,0 +1,80 @@
+"""
+Typed application settings, loaded from environment variables / .env.
+
+Every setting used anywhere in the backend must be declared here — no
+os.environ[...] calls scattered through the codebase. This is the single
+source of truth for what the service needs to run, and it's what
+db/migrations.py, db/pool.py, and main.py all import from.
+"""
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # ── App ──────────────────────────────────────────────────────────────
+    app_env: str = Field(default="development", description="development | staging | production")
+    log_level: str = Field(default="INFO", description="Python logging level name")
+    api_host: str = Field(default="0.0.0.0", description="Bind host for uvicorn")
+    api_port: int = Field(default=8000, description="Bind port for uvicorn")
+
+    # ── Postgres ─────────────────────────────────────────────────────────
+    postgres_host: str = Field(default="postgres", description="Postgres hostname (service name in compose)")
+    postgres_port: int = Field(default=5432, description="Postgres port")
+    postgres_db: str = Field(default="neuroflow", description="Postgres database name")
+    postgres_user: str = Field(default="neuroflow", description="Postgres user")
+    postgres_password: str = Field(description="Postgres password — required, no default")
+    postgres_pool_min_size: int = Field(default=2, description="asyncpg pool minimum connections")
+    postgres_pool_max_size: int = Field(default=10, description="asyncpg pool maximum connections")
+
+    @property
+    def database_url(self) -> str:
+        return (
+            f"postgresql://{self.postgres_user}:{self.postgres_password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+
+    # ── Redis ────────────────────────────────────────────────────────────
+    redis_host: str = Field(default="redis", description="Redis hostname (service name in compose)")
+    redis_port: int = Field(default=6379, description="Redis port")
+    redis_password: str = Field(description="Redis password — required, no default")
+
+    @property
+    def redis_url(self) -> str:
+        return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/0"
+
+    # ── MLflow ───────────────────────────────────────────────────────────
+    mlflow_tracking_uri: str = Field(
+        default="http://mlflow:5000", description="MLflow tracking server base URL"
+    )
+
+    # ── Tracing (OpenTelemetry → Jaeger) ────────────────────────────────
+    otel_service_name: str = Field(default="neuroflow-api", description="Service name reported to the tracer")
+    otel_exporter_otlp_endpoint: str = Field(
+        default="http://jaeger:4317", description="OTLP gRPC endpoint (Jaeger collector)"
+    )
+    otel_traces_enabled: bool = Field(default=True, description="Toggle tracing instrumentation on/off")
+
+    # ── Embeddings / model routing (used by later tasks, declared now so
+    #    config.py stays the single place new env vars are added) ────────
+    embedding_model: str = Field(default="text-embedding-3-small", description="Default embedding model")
+    embedding_dimensions: int = Field(default=1536, description="Must match the vector(N) column in chunks")
+
+    # ── RLS ──────────────────────────────────────────────────────────────
+    db_app_role: str = Field(default="neuroflow_app", description="Pipeline-scoped Postgres role (see 002_rls.sql)")
+    db_admin_role: str = Field(default="neuroflow_admin", description="Admin Postgres role for finetune_jobs")
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Cached settings singleton — import get_settings() and call it, don't
+    instantiate Settings() directly, so the whole process shares one parse
+    of the environment."""
+    return Settings()
