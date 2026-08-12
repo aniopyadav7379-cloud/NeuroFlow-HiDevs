@@ -1,0 +1,26 @@
+groups:
+  - name: neuroflow
+    rules:
+      - alert: HighEvaluationFailureRate
+        expr: rate(neuroflow_queries_total{status="error"}[5m]) > 0.1
+        for: 5m
+        annotations:
+          summary: "More than 10% of queries are failing"
+
+      - alert: CircuitBreakerOpen
+        expr: neuroflow_circuit_breakers_open > 0
+        for: 1m
+        annotations:
+          summary: "One or more LLM provider circuit breakers are open"
+
+      - alert: EvaluationScoreDegraded
+        expr: neuroflow_eval_overall < 0.65
+        for: 15m
+        annotations:
+          summary: "Pipeline quality score below 0.65 for 15 minutes"
+
+      - alert: QueueDepthHigh
+        expr: neuroflow_queue_depth > 50
+        for: 5m
+        annotations:
+          summary: "Ingestion queue depth above 50 for 5 minutes"
