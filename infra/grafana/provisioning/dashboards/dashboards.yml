@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: NeuroFlow
+    folder: NeuroFlow
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards-json

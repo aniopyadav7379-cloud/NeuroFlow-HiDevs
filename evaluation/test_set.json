@@ -1,0 +1,15 @@
+[
+  {
+    "_comment": "TEMPLATE — replace every entry below with a real query against YOUR ingested corpus and the real chunk_id(s) (from the `chunks` table) that actually answer it. evaluation/retrieval_eval.py refuses to run while any relevant_chunk_ids is still the placeholder value. The task calls for 20 such entries.",
+    "query": "REPLACE_WITH_A_REAL_QUERY",
+    "relevant_chunk_ids": ["REPLACE_WITH_REAL_CHUNK_ID"]
+  },
+  {
+    "query": "What is HNSW indexing?",
+    "relevant_chunk_ids": ["REPLACE_WITH_REAL_CHUNK_ID"]
+  },
+  {
+    "query": "How does reciprocal rank fusion combine multiple retrieval lists?",
+    "relevant_chunk_ids": ["REPLACE_WITH_REAL_CHUNK_ID"]
+  }
+]
