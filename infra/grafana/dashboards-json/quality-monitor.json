@@ -1,0 +1,46 @@
+{
+  "title": "NeuroFlow - Quality Monitor",
+  "uid": "neuroflow-quality-monitor",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "title": "Rolling 24h avg evaluation metrics per pipeline", "type": "timeseries",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "avg_over_time(neuroflow_eval_faithfulness[24h])", "legendFormat": "faithfulness {{pipeline_id}}" },
+        { "expr": "avg_over_time(neuroflow_eval_overall[24h])", "legendFormat": "overall {{pipeline_id}}" }
+      ]
+    },
+    {
+      "id": 2, "title": "Overall score trend (7 days)", "type": "timeseries",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 9 },
+      "targets": [{ "expr": "neuroflow_eval_overall", "legendFormat": "{{pipeline_id}}" }],
+      "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.6 }, { "color": "green", "value": 0.8 }] }
+    },
+    {
+      "id": 3, "title": "Documents ingested per day", "type": "barchart",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 9 },
+      "targets": [{ "expr": "sum(increase(neuroflow_ingestion_docs_total[1d])) by (source_type)", "legendFormat": "{{source_type}}" }]
+    },
+    {
+      "id": 4, "title": "Fine-tuning job history", "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "description": "Backed by a Postgres data source query against finetune_jobs (not a Prometheus metric) — configure a Postgres datasource pointing at NeuroFlow's DB and set this panel's query to: SELECT id, base_model, status, training_pair_count, created_at, completed_at FROM finetune_jobs ORDER BY created_at DESC LIMIT 50",
+      "targets": []
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "name": "Quality anomaly (2 sigma)",
+        "enable": true,
+        "iconColor": "red",
+        "datasource": "Prometheus",
+        "expr": "neuroflow_eval_overall < (avg_over_time(neuroflow_eval_overall[7d]) - 2 * stddev_over_time(neuroflow_eval_overall[7d]))"
+      }
+    ]
+  }
+}

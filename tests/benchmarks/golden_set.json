@@ -1,0 +1,15 @@
+[
+  {
+    "_comment": "TEMPLATE — replace with 50 real (query, relevant_chunk_ids) pairs from YOUR ingested corpus. retrieval_benchmark.py refuses to run while any relevant_chunk_ids is still the placeholder value.",
+    "query": "REPLACE_WITH_A_REAL_QUERY",
+    "relevant_chunk_ids": ["REPLACE_WITH_REAL_CHUNK_ID"]
+  },
+  {
+    "query": "What is HNSW indexing?",
+    "relevant_chunk_ids": ["REPLACE_WITH_REAL_CHUNK_ID"]
+  },
+  {
+    "query": "How does reciprocal rank fusion combine multiple retrieval lists?",
+    "relevant_chunk_ids": ["REPLACE_WITH_REAL_CHUNK_ID"]
+  }
+]

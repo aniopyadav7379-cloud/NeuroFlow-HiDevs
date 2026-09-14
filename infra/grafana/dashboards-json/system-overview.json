@@ -1,0 +1,47 @@
+{
+  "title": "NeuroFlow - System Overview",
+  "uid": "neuroflow-system-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "title": "Queries per minute", "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [{ "expr": "sum(rate(neuroflow_queries_total[1m])) * 60", "legendFormat": "queries/min" }]
+    },
+    {
+      "id": 2, "title": "Retrieval latency P50/P95", "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(neuroflow_retrieval_latency_seconds_bucket[5m])) by (le, strategy))", "legendFormat": "p50 {{strategy}}" },
+        { "expr": "histogram_quantile(0.95, sum(rate(neuroflow_retrieval_latency_seconds_bucket[5m])) by (le, strategy))", "legendFormat": "p95 {{strategy}}" }
+      ]
+    },
+    {
+      "id": 3, "title": "Generation latency P50/P95", "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(neuroflow_generation_latency_seconds_bucket[5m])) by (le, model))", "legendFormat": "p50 {{model}}" },
+        { "expr": "histogram_quantile(0.95, sum(rate(neuroflow_generation_latency_seconds_bucket[5m])) by (le, model))", "legendFormat": "p95 {{model}}" }
+      ]
+    },
+    {
+      "id": 4, "title": "LLM cost per hour ($)", "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [{ "expr": "sum(rate(neuroflow_llm_cost_usd_sum[1h])) * 3600", "legendFormat": "cost/hr" }]
+    },
+    {
+      "id": 5, "title": "Ingestion queue depth", "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [{ "expr": "neuroflow_queue_depth", "legendFormat": "queue depth" }],
+      "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 100 }] }
+    },
+    {
+      "id": 6, "title": "Circuit breaker status by provider", "type": "state-timeline",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [{ "expr": "neuroflow_circuit_breakers_open", "legendFormat": "open breakers" }]
+    }
+  ]
+}

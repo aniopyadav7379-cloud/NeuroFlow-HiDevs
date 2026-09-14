@@ -1,0 +1,36 @@
+name: Nightly Quality Gate
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch: {}
+jobs:
+  quality-check:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install -r backend/requirements.txt -r tests/requirements.txt
+      - name: Run retrieval evaluation against staging
+        env:
+          POSTGRES_PASSWORD: "${{ secrets.STAGING_POSTGRES_PASSWORD }}"
+          REDIS_PASSWORD: "${{ secrets.STAGING_REDIS_PASSWORD }}"
+          JWT_SECRET_KEY: "${{ secrets.STAGING_JWT_SECRET_KEY }}"
+          OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}"
+          POSTGRES_HOST: "${{ secrets.STAGING_POSTGRES_HOST }}"
+          REDIS_HOST: "${{ secrets.STAGING_REDIS_HOST }}"
+        run: python -m evaluation.retrieval_eval
+      - name: Enforce MRR threshold
+        run: |
+          python -c "
+          import json
+          results = json.load(open('evaluation/retrieval_results.json'))
+          mrr = results['reranked']['mrr']
+          assert mrr >= 0.55, f'MRR@10 {mrr} below threshold 0.55'
+          print(f'MRR@10 {mrr} meets threshold')
+          "
+      - if: failure()
+        uses: slackapi/slack-github-action@v1
+        with: { payload: '{"text": "NeuroFlow quality gate failed!"}' }
+        env: { SLACK_WEBHOOK_URL: "${{ secrets.SLACK_WEBHOOK_URL }}" }
