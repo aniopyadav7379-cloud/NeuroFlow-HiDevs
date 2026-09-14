@@ -1,0 +1,32 @@
+{
+  "retrieval": {
+    "hit_rate_at_10": 0.8400,
+    "mrr_at_10": 0.6500,
+    "target": {
+      "hit_rate_at_10": 0.80,
+      "mrr_at_10": 0.60
+    },
+    "source": "evaluation/retrieval_results.json (real run, RetrievalPipeline.retrieve against ingested chunks)"
+  },
+  "generation": {
+    "status": "pending_evaluation",
+    "faithfulness": null,
+    "answer_relevance": null,
+    "context_precision": null,
+    "overall_score": null,
+    "target": {
+      "faithfulness": 0.78,
+      "answer_relevance": 0.75,
+      "context_precision": 0.72,
+      "overall_score": 0.75
+    },
+    "note": "Previous values (0.81 / 0.79 / 0.76 / 0.786) were produced by evaluation/generation_eval.py using random.uniform() and were never real measurements. That script has been fixed to call the existing EvaluationJudge/LLM-as-judge implementation instead. These fields must stay null until evaluation/generation_eval.py has been run against live Postgres/Redis/LLM infrastructure and evaluation/generation_results.json shows status \"ok\"."
+  },
+  "latency": {
+    "p95_query_latency_seconds": 1.8,
+    "target": {
+      "p95_query_latency_seconds": 4.0
+    },
+    "source": "measured with Redis embedding + full-query caching enabled"
+  }
+}

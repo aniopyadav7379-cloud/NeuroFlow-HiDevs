@@ -1,0 +1,77 @@
+{
+  "title": "Quality Monitor",
+  "tags": ["neuroflow", "quality", "evaluation"],
+  "timezone": "browser",
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "datasource": "PostgreSQL",
+        "enable": true,
+        "iconColor": "red",
+        "name": "Anomalies & Suggestions",
+        "rawQuery": "SELECT EXTRACT(epoch FROM created_at)*1000 as time, 'Anomaly Detected! Score: ' || ROUND(score::numeric, 2) || ' (Mean: ' || ROUND(rolling_mean::numeric, 2) || '). Suggestions: ' || suggestions::text as text, 'anomaly' as tags FROM pipeline_anomalies"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Overall Score Trend (7-day)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "avg_over_time(neuroflow_eval_overall[7d])",
+          "legendFormat": "{{pipeline_id}}"
+        }
+      ]
+    },
+    {
+      "title": "Rolling 24h Average Evaluation Metrics",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "avg_over_time(neuroflow_eval_faithfulness[24h])",
+          "legendFormat": "Faithfulness ({{pipeline_id}})"
+        },
+        {
+          "expr": "avg_over_time(neuroflow_eval_overall[24h])",
+          "legendFormat": "Overall ({{pipeline_id}})"
+        }
+      ]
+    },
+    {
+      "title": "Documents Ingested per Day",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(increase(neuroflow_ingestion_docs_total[1d]))",
+          "legendFormat": "Docs/Day"
+        }
+      ]
+    },
+    {
+      "title": "Fine-Tuning Job History",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "datasource": "PostgreSQL",
+          "rawSql": "SELECT id, pipeline_id, status, started_at, completed_at, error_message FROM finetune_jobs ORDER BY started_at DESC LIMIT 50;",
+          "format": "table"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38
+}

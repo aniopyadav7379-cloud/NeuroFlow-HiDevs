@@ -1,0 +1,10 @@
+{
+  "status": "unavailable",
+  "reason": "no_ingested_chunks",
+  "detail": "No chunks found in the database. Please run ingestion first.",
+  "faithfulness": null,
+  "answer_relevance": null,
+  "context_precision": null,
+  "overall_score": null,
+  "num_samples": 0
+}

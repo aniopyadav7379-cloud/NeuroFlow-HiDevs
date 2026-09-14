@@ -1,0 +1,76 @@
+name: Semantic Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && (contains(github.event.pull_request.labels.*.name, 'breaking') || contains(github.event.pull_request.labels.*.name, 'feature') || contains(github.event.pull_request.labels.*.name, 'fix'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Determine Bump Level
+        id: bump
+        run: |
+          BUMP="patch"
+          if [[ "${{ contains(github.event.pull_request.labels.*.name, 'breaking') }}" == "true" ]]; then
+            BUMP="major"
+          elif [[ "${{ contains(github.event.pull_request.labels.*.name, 'feature') }}" == "true" ]]; then
+            BUMP="minor"
+          fi
+          echo "level=$BUMP" >> $GITHUB_OUTPUT
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Bump Version in pyproject.toml
+        id: version
+        run: |
+          pip install toml
+          python -c "
+          import toml
+          data = toml.load('pyproject.toml')
+          if 'project' not in data:
+              data['project'] = {}
+          old_ver = data['project'].get('version', '0.1.0')
+          major, minor, patch = map(int, old_ver.split('.'))
+          level = '${{ steps.bump.outputs.level }}'
+          if level == 'major':
+              major += 1; minor = 0; patch = 0
+          elif level == 'minor':
+              minor += 1; patch = 0
+          else:
+              patch += 1
+          new_ver = f'{major}.{minor}.{patch}'
+          data['project']['version'] = new_ver
+          with open('pyproject.toml', 'w') as f:
+              toml.dump(data, f)
+          print(f'Bumped to {new_ver}')
+          with open('${{ env.GITHUB_OUTPUT }}', 'a') as f:
+              f.write(f'new_version={new_ver}\n')
+          "
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml
+          git commit -m "chore(release): bump version to ${{ steps.version.outputs.new_version }}"
+          git push
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create v${{ steps.version.outputs.new_version }} --title "Release v${{ steps.version.outputs.new_version }}" --generate-notes

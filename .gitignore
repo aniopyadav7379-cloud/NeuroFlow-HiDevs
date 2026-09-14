@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.env
+.pytest_cache/
+*.db
+mlruns/
+dummy.txt
+# Local TLS certificates
+infra/nginx/certs/*.key
+infra/nginx/certs/*.crt
