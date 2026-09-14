@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0b0d10;
+  --foreground: #e7eaee;
+}
+
+* {
+  border-color: theme("colors.border.DEFAULT");
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+}
+
+::selection {
+  background: theme("colors.accent.dim");
+  color: theme("colors.accent.bright");
+}
+
+/* thin, quiet scrollbars — this UI is dense, a fat scrollbar competes */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: theme("colors.border.strong");
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: theme("colors.ink.faint");
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}

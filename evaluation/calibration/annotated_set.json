@@ -1,0 +1,21 @@
+[
+  {
+    "_comment": "TEMPLATE — replace every entry with a REAL (query, answer, context, human_score) tuple, scored by an actual human annotator judging faithfulness (0.0-1.0: are the answer's claims grounded in the context?). evaluation/calibration/run_calibration.py refuses to run while any human_score is still the placeholder value. The task calls for 30 such entries.",
+    "query": "REPLACE_WITH_A_REAL_QUERY",
+    "answer": "REPLACE_WITH_A_REAL_ANSWER",
+    "context": "REPLACE_WITH_THE_REAL_CONTEXT_IT_WAS_GENERATED_FROM",
+    "human_score": "REPLACE_WITH_REAL_HUMAN_SCORE"
+  },
+  {
+    "query": "What is HNSW indexing?",
+    "answer": "HNSW is a graph-based approximate nearest neighbor search algorithm that builds a multi-layer navigable small world graph for fast vector similarity search.",
+    "context": "HNSW (Hierarchical Navigable Small World) is a graph-based algorithm for approximate nearest neighbor search, using a layered graph structure to enable fast similarity search over high-dimensional vectors.",
+    "human_score": "REPLACE_WITH_REAL_HUMAN_SCORE"
+  },
+  {
+    "query": "How does reciprocal rank fusion work?",
+    "answer": "RRF combines multiple ranked lists by summing 1/(k+rank) for each list a document appears in, then sorting by the combined score.",
+    "context": "Reciprocal Rank Fusion computes a score for each document as the sum, across all input rankings that contain it, of 1 divided by a constant k plus the document's rank in that ranking.",
+    "human_score": "REPLACE_WITH_REAL_HUMAN_SCORE"
+  }
+]

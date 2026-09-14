@@ -1,0 +1,52 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install ruff mypy
+      - run: ruff check backend/
+      - run: mypy backend/ --ignore-missing-imports
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env: { POSTGRES_PASSWORD: testpassword, POSTGRES_DB: neuroflow_test }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      POSTGRES_PASSWORD: testpassword
+      REDIS_PASSWORD: ""
+      JWT_SECRET_KEY: ci-test-secret-key-not-for-production-use
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install -r backend/requirements.txt -r tests/requirements.txt
+      - run: pytest tests/unit/ -v --cov=backend --cov-report=xml
+      - uses: codecov/codecov-action@v4
+        with: { file: coverage.xml }
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install detect-secrets pip-audit
+      - run: detect-secrets-hook --baseline .secrets.baseline $(git diff --name-only HEAD~1)
+      - run: pip-audit -r backend/requirements.txt || true
+      - run: npm audit --prefix frontend --audit-level=high
