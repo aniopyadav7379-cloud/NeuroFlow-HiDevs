@@ -17,6 +17,7 @@ from backend.config import settings
 from backend.db.health import check_mlflow, check_postgres, check_redis
 from backend.db.migrations import run_migrations
 from backend.db.pool import close_pool, create_pool
+from backend.db.retention import start_retention_scheduler, stop_retention_scheduler
 
 # Setup tracing
 resource = Resource.create({"service.name": "neuroflow-api"})
@@ -63,9 +64,13 @@ async def lifespan(app: FastAPI) -> Any:  # noqa: ANN401
 
     # Start background evaluation queue processor
     task = asyncio.create_task(process_evaluation_queue())
+    
+    # Start data retention scheduled jobs
+    start_retention_scheduler()
 
     yield
     # Shutdown
+    stop_retention_scheduler()
     task.cancel()
     await close_pool()
 
@@ -96,7 +101,16 @@ app.include_router(evaluations.router, dependencies=[Depends(get_current_user)])
 FastAPIInstrumentor.instrument_app(app)
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    summary="System Health Check",
+    description=(
+        "Returns the current operational status of the API, PostgreSQL database, and Redis cache. "
+        "Useful for Kubernetes liveness/readiness probes."
+    ),
+    response_description="A JSON object detailing the health status of all subsystems.",
+    tags=["Admin"]
+)
 async def health_check() -> Any:  # noqa: ANN401
     pg_res = await check_postgres()
     redis_res = await check_redis()
@@ -123,13 +137,22 @@ async def health_check() -> Any:  # noqa: ANN401
                 cb["failure_count"] = int(fails) if fails else 0
             cb_status[provider] = cb
 
-        queue_depth = await r.llen("queue:ingest")
-        # Optional: check arq queue depth as well if queue:ingest is empty
-        if queue_depth == 0:
-            queue_depth = await r.llen("arq:queue")
+        # NOTE: arq's enqueue_job() stores queued job ids in a Redis sorted set
+        # (ZADD), not a list - LLEN against that key raises WRONGTYPE once any
+        # real job has been enqueued, which silently zeroed out this whole
+        # try block (caught by the except below) instead of reporting real
+        # status. Use ZCARD, matching how the queue is actually populated.
+        queue_depth = await r.zcard("queue:ingest")
 
-        workers = await r.scard("arq:workers")
-        worker_count = workers if workers else 2  # default if none
+        # arq does not maintain an "arq:workers" set in this version - that key
+        # is never written by arq, so checking it always returned 0 workers
+        # (and the old code masked that with a hardcoded "2" fallback below).
+        # arq's real liveness signal is a per-queue health-check key with a TTL
+        # that a running worker refreshes periodically (see arq.worker.Worker.
+        # record_health). Treat its mere presence as "a worker is alive".
+        health_check_key = "queue:ingest:health-check"
+        worker_health_raw = await r.get(health_check_key)
+        worker_count = 1 if worker_health_raw else 0
         await r.aclose()
     except Exception:
         cb_status = {}
@@ -162,7 +185,16 @@ async def health_check() -> Any:  # noqa: ANN401
     }
 
 
-@app.get("/metrics")
+@app.get(
+    "/metrics",
+    summary="Prometheus Metrics",
+    description=(
+        "Exposes internal Prometheus metrics including request counts, error rates, "
+        "and API latencies. Intended to be scraped by a Prometheus server."
+    ),
+    response_description="Plain text Prometheus metrics exposition format.",
+    tags=["Admin"]
+)
 async def metrics() -> Any:  # noqa: ANN401
     # Prometheus text format
     data = generate_latest()

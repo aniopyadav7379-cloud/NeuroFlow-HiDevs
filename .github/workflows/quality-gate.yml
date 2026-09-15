@@ -7,6 +7,13 @@ on:
 jobs:
   quality-check:
     runs-on: ubuntu-latest
+    # NOTE: this job has no `services: postgres/redis` block and no
+    # POSTGRES_HOST/REDIS_HOST/etc. secrets configured, so `--env staging`
+    # will fail fast with a clear error (see evaluation/retrieval_eval.py) until
+    # this repo's real staging Postgres/Redis connection details are added
+    # here as env/secrets. It was previously silently connecting to the
+    # docker-compose hostname "postgres" (unresolvable on a bare runner) and
+    # failing on a confusing DNS error instead.
     steps:
       - uses: actions/checkout@v4
       - name: Check retrieval benchmark

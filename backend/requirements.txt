@@ -248,3 +248,5 @@ pdfplumber
 python-docx
 python-pptx
 trafilatura
+structlog
+apscheduler

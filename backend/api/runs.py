@@ -7,14 +7,32 @@ from pydantic import BaseModel, Field
 
 from backend.db.pool import get_pool
 
-router = APIRouter(prefix="/runs", tags=["runs"])
+router = APIRouter(prefix="/runs", tags=["Query"])
 
 
 class RatingRequest(BaseModel):
-    rating: int = Field(ge=1, le=5)
+    rating: int = Field(
+        ...,
+        ge=1, 
+        le=5, 
+        description="The user's explicit rating for the generated answer, from 1 to 5.", 
+        examples=[5]
+    )
 
 
-@router.patch("/{run_id}/rating")
+@router.patch(
+    "/{run_id}/rating",
+    summary="Submit user feedback rating",
+    description=(
+        "Allows end-users to submit a 1-5 star rating for a specific query run. If the user's "
+        "explicit rating differs from the automated LLM-as-a-judge score by more than 0.3 "
+        "(normalized), the evaluation is flagged with `calibration_needed=True` for human review. "
+        "**Errors**: Returns 500 if the database transaction fails."
+    ),
+    response_description=(
+        "A JSON object confirming success and indicating whether calibration is needed."
+    )
+)
 async def update_rating(run_id: UUID, req: RatingRequest) -> Any:  # noqa: ANN401
     pool = get_pool()
 

@@ -1,26 +1,43 @@
 import asyncio
 import json
+import logging
+import uuid
+from datetime import datetime
 from typing import Any
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Request
 from opentelemetry import trace
 from opentelemetry.propagate import extract
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from backend.config import settings
 from backend.monitoring.metrics import eval_faithfulness, eval_overall
 
+logger = logging.getLogger(__name__)
+
+
+
 tracer = trace.get_tracer(__name__)
 
-router = APIRouter(prefix="/evaluations", tags=["evaluations"])
+router = APIRouter(prefix="/evaluations", tags=["Evaluation"])
 
 
-@router.get("/stream")
+@router.get(
+    "/stream",
+    summary="Stream real-time evaluation metrics",
+    description=(
+        "Subscribe to real-time RAG evaluation results (faithfulness, answer relevance, "
+        "context precision, context recall, overall score) via Server-Sent Events (SSE). "
+        "Use this to power live observability dashboards. **Performance notes**: Uses "
+        "Redis Pub/Sub under the hood. Keepalive pings are sent automatically."
+    ),
+    response_description=(
+        "An SSE stream emitting `message` events containing the evaluation JSON dictionary."
+    )
+)
 async def stream_evaluations(request: Request) -> Any:  # noqa: ANN401
-    """
-    Subscribe to real-time evaluations using SSE.
-    """
 
     async def event_generator() -> Any:  # noqa: ANN401
         r = aioredis.from_url(
@@ -49,18 +66,32 @@ async def stream_evaluations(request: Request) -> Any:  # noqa: ANN401
     return EventSourceResponse(event_generator())
 
 
-import uuid  # noqa: E402
-from datetime import datetime  # noqa: E402
-
-from pydantic import BaseModel  # noqa: E402
-
 
 class SimulateEval(BaseModel):
-    pipeline_name: str = "Test Pipeline"
-    query: str = "What is the capital of France?"
+    pipeline_name: str = Field(
+        "Test Pipeline", 
+        description="The name of the pipeline to associate with the simulated evaluation run.",
+        examples=["RAG Prod v2"]
+    )
+    query: str = Field(
+        "What is the capital of France?",
+        description="The synthetic or test query used for the simulated run.",
+        examples=["How do I configure Redis?"]
+    )
 
 
-@router.post("/simulate")
+@router.post(
+    "/simulate",
+    summary="Simulate an evaluation run",
+    description=(
+        "Generates synthetic evaluation metrics (faithfulness, context precision, etc.) "
+        "and publishes them to the Redis Pub/Sub stream for testing dashboard "
+        "interactivity without invoking a real LLM judge."
+    ),
+    response_description=(
+        "A JSON object containing the status and the simulated evaluation dictionary."
+    )
+)
 async def simulate_eval(req: SimulateEval) -> Any:  # noqa: ANN401
     # Simulate a run ID and random metrics
     import random
@@ -117,7 +148,15 @@ async def simulate_eval(req: SimulateEval) -> Any:  # noqa: ANN401
         return {"status": "simulated", "eval": eval_dict}
 
 
-@router.get("")
+@router.get(
+    "",
+    summary="List all evaluation runs",
+    description=(
+        "Fetches a paginated list of historical evaluation records from the database, "
+        "sorted chronologically descending. Useful for historical reporting and trend analysis."
+    ),
+    response_description="A JSON array of evaluation records."
+)
 async def list_evaluations(limit: int = 50, offset: int = 0) -> Any:  # noqa: ANN401
     from backend.db.pool import get_pool
 
@@ -129,7 +168,15 @@ async def list_evaluations(limit: int = 50, offset: int = 0) -> Any:  # noqa: AN
         return [dict(r) for r in records]
 
 
-@router.get("/{run_id}")
+@router.get(
+    "/{run_id}",
+    summary="Get evaluation by Run ID",
+    description=(
+        "Fetches the explicit evaluation metrics for a specific pipeline `run_id`. "
+        "**Errors**: Returns 404 if the evaluation does not exist or has not completed yet."
+    ),
+    response_description="A JSON object containing the evaluation metrics for the run."
+)
 async def get_evaluation(run_id: uuid.UUID) -> Any:  # noqa: ANN401
     from fastapi import HTTPException
 
@@ -148,7 +195,18 @@ async def get_evaluation(run_id: uuid.UUID) -> Any:  # noqa: ANN401
 
 
 async def process_evaluation_queue() -> Any:  # noqa: ANN401
-    import random
+    """Consume real pipeline-run evaluation jobs from Redis and score them with the
+    genuine LLM-as-judge (evaluation/judge.py::EvaluationJudge).
+
+    NOTE: this previously generated faithfulness/relevance/precision/recall/overall
+    scores with random.uniform() instead of calling the judge, so every dashboard
+    metric and anomaly-detection trigger driven by this queue was fabricated. That
+    has been fixed: EvaluationJudge.evaluate_run() does the real per-metric LLM
+    evaluation and persists it; this function only reads those real values back to
+    publish them for the SSE dashboard and to run anomaly detection.
+    """
+    from backend.db.pool import get_pool
+    from evaluation.judge import EvaluationJudge
 
     r = aioredis.from_url(
         settings.redis_url,
@@ -182,23 +240,51 @@ async def process_evaluation_queue() -> Any:  # noqa: ANN401
                 judge_span.set_attribute("pipeline_id", pipeline_id)
                 judge_span.set_attribute("run_id", run_id)
 
-                with tracer.start_as_current_span("evaluation.faithfulness") as f_span:
-                    faithfulness = random.uniform(0.6, 1.0)
-                    f_span.set_attribute("score", faithfulness)
+                try:
+                    pool = get_pool()
+                except Exception as e:
+                    logger.error(f"DB pool unavailable; cannot evaluate run {run_id}: {e}")
+                    continue
 
-                with tracer.start_as_current_span("evaluation.answer_relevance") as ar_span:
-                    answer_relevance = random.uniform(0.5, 0.95)
-                    ar_span.set_attribute("score", answer_relevance)
+                judge = EvaluationJudge(pool, r)
+                try:
+                    judged_score = await judge.evaluate_run(run_id)
+                except Exception as e:
+                    logger.error(f"Real evaluation failed for run {run_id}: {e}")
+                    continue
 
-                with tracer.start_as_current_span("evaluation.context_precision") as cp_span:
-                    context_precision = random.uniform(0.7, 1.0)
-                    cp_span.set_attribute("score", context_precision)
+                if judged_score is None:
+                    logger.info(f"Run {run_id} not found; nothing to evaluate.")
+                    continue
 
-                with tracer.start_as_current_span("evaluation.context_recall") as cr_span:
-                    context_recall = random.uniform(0.4, 0.9)
-                    cr_span.set_attribute("score", context_recall)
+                # judge.evaluate_run() already persisted the real per-metric scores
+                # to the evaluations table - read them back rather than recomputing,
+                # so what we publish is exactly what was measured and stored.
+                async with pool.acquire() as conn:
+                    eval_row = await conn.fetchrow(
+                        """
+                        SELECT faithfulness, answer_relevance, context_precision,
+                               context_recall, overall_score
+                        FROM evaluations WHERE run_id = $1
+                        ORDER BY evaluated_at DESC LIMIT 1
+                        """,
+                        uuid.UUID(run_id),
+                    )
 
-                overall_score = random.uniform(0.6, 0.95)
+                if not eval_row:
+                    logger.error(f"No evaluations row found for run {run_id} after judging.")
+                    continue
+
+                faithfulness = float(eval_row["faithfulness"])
+                answer_relevance = float(eval_row["answer_relevance"])
+                context_precision = float(eval_row["context_precision"])
+                context_recall = float(eval_row["context_recall"])
+                overall_score = float(eval_row["overall_score"])
+
+                judge_span.set_attribute("faithfulness", faithfulness)
+                judge_span.set_attribute("answer_relevance", answer_relevance)
+                judge_span.set_attribute("context_precision", context_precision)
+                judge_span.set_attribute("context_recall", context_recall)
                 judge_span.set_attribute("overall_score", overall_score)
 
                 eval_dict = {
@@ -221,28 +307,12 @@ async def process_evaluation_queue() -> Any:  # noqa: ANN401
 
                 await r.publish("evaluations:new", json.dumps(eval_dict))
 
-                # Persist to DB and check for anomalies
+                # Check for anomalies against the real rolling stats (the evaluation
+                # row itself was already inserted by EvaluationJudge.evaluate_run above).
                 if pipeline_id != "unknown":
                     try:
-                        from backend.db.pool import get_pool
-
-                        pool = get_pool()
                         async with pool.acquire() as conn:
-                            # 1. Insert evaluation
-                            await conn.execute(
-                                """
-                                INSERT INTO evaluations (run_id, faithfulness, answer_relevance, context_precision, context_recall, overall_score)
-                                VALUES ($1, $2, $3, $4, $5, $6)
-                                """,  # noqa: E501
-                                uuid.UUID(run_id),
-                                faithfulness,
-                                answer_relevance,
-                                context_precision,
-                                context_recall,
-                                overall_score,
-                            )
-
-                            # 2. Get rolling mean and stddev
+                            # Get rolling mean and stddev
                             stats = await conn.fetchrow(
                                 """
                                 SELECT 
@@ -295,14 +365,14 @@ async def process_evaluation_queue() -> Any:  # noqa: ANN401
                                     )
 
                     except Exception as db_err:
-                        print(f"Error checking anomalies: {db_err}")
+                        logger.info(f"Error checking anomalies: {db_err}")
 
         except asyncio.CancelledError:
             break
         except Exception as e:
             if "Timeout reading" in str(e) or "TimeoutError" in type(e).__name__:
                 continue
-            print(f"Error processing evaluation queue: {e}")
+            logger.info(f"Error processing evaluation queue: {e}")
             await asyncio.sleep(1)
 
     await r.aclose()

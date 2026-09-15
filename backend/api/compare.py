@@ -6,7 +6,7 @@ from uuid import UUID
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.config import settings
 from backend.db.pool import get_pool
@@ -15,13 +15,24 @@ from evaluation.judge import EvaluationJudge
 from pipelines.generation.generator import StreamingGenerator
 from pipelines.retrieval.pipeline import RetrievalPipeline
 
-router = APIRouter(prefix="/pipelines/compare", tags=["compare"])
-
+router = APIRouter(prefix="/pipelines/compare", tags=["Admin"])
 
 class CompareRequest(BaseModel):
-    query: str
-    pipeline_a_id: UUID
-    pipeline_b_id: UUID
+    query: str = Field(
+        ...,
+        description="The test query to run across both pipelines concurrently.",
+        examples=["What is the capital of France?"]
+    )
+    pipeline_a_id: UUID = Field(
+        ...,
+        description="The ID of the first pipeline (usually the baseline).",
+        examples=["123e4567-e89b-12d3-a456-426614174000"]
+    )
+    pipeline_b_id: UUID = Field(
+        ...,
+        description="The ID of the second pipeline (usually the challenger).",
+        examples=["987e6543-e21b-34d3-a456-426614174000"]
+    )
 
 
 async def get_redis() -> Any:  # noqa: ANN401
@@ -115,7 +126,19 @@ async def run_pipeline(
         raise e
 
 
-@router.post("")
+@router.post(
+    "",
+    summary="A/B Test Pipelines",
+    description=(
+        "Executes a single RAG query against two different pipelines concurrently. "
+        "Returns a side-by-side comparison of the generated answers, retrieval latency, "
+        "total latency, chunks used, and automated evaluation scores. This is highly "
+        "useful for comparing a baseline model against a challenger model. Requires 'admin' scope."
+    ),
+    response_description=(
+        "A JSON object containing the query and the results for pipeline_a and pipeline_b."
+    )
+)
 async def compare_pipelines(req: CompareRequest) -> Any:  # noqa: ANN401
     pool = get_pool()
     redis_client = await get_redis()

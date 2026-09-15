@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -10,6 +11,10 @@ from evaluation.metrics.answer_relevance import evaluate_answer_relevance
 from evaluation.metrics.context_precision import evaluate_context_precision
 from evaluation.metrics.context_recall import evaluate_context_recall
 from evaluation.metrics.faithfulness import evaluate_faithfulness
+
+logger = logging.getLogger(__name__)
+
+
 
 tracer = trace.get_tracer(__name__)
 
@@ -47,7 +52,7 @@ class EvaluationJudge:
                 UUID(run_id),
             )
             if not row:
-                print(f"Run {run_id} not found for evaluation.")
+                logger.info(f"Run {run_id} not found for evaluation.")
                 return None
 
             query = row["query"]

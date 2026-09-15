@@ -1,7 +1,12 @@
+import logging
 import os
 from typing import Any
 
 from backend.db.pool import get_pool
+
+logger = logging.getLogger(__name__)
+
+
 
 
 async def run_migrations() -> Any:  # noqa: ANN401
@@ -15,7 +20,7 @@ async def run_migrations() -> Any:  # noqa: ANN401
         with open(schema_path) as f:  # noqa: ASYNC230
             schema_sql = f.read()
     except Exception as e:
-        print(f"Error reading schema file: {e}")
+        logger.info(f"Error reading schema file: {e}")
         return
 
     # In a real app we'd use Alembic or similar, but for now we'll just check if the documents table exists  # noqa: E501
@@ -24,24 +29,24 @@ async def run_migrations() -> Any:  # noqa: ANN401
             # Check if applied
             val = await conn.fetchval("SELECT to_regclass('public.documents')")
             if not val:
-                print("Applying 001_schema.sql")
+                logger.info("Applying 001_schema.sql")
                 await conn.execute(schema_sql)
             else:
-                print("Schema already applied.")
+                logger.info("Schema already applied.")
 
             # Add prompt column to pipeline_runs if it doesn't exist
-            print("Applying ALTER TABLE for pipeline_runs prompt and metadata columns")
+            logger.info("Applying ALTER TABLE for pipeline_runs prompt and metadata columns")
             await conn.execute("ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS prompt TEXT;")
             await conn.execute(
                 "ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';"
             )
 
-            print("Applying ALTER TABLE for evaluations metadata column")
+            logger.info("Applying ALTER TABLE for evaluations metadata column")
             await conn.execute(
                 "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';"
             )
 
-            print("Applying CREATE TABLE for pipeline_anomalies")
+            logger.info("Applying CREATE TABLE for pipeline_anomalies")
             await conn.execute("""
             CREATE TABLE IF NOT EXISTS pipeline_anomalies (
               id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -55,4 +60,4 @@ async def run_migrations() -> Any:  # noqa: ANN401
             );
             """)
         except Exception as e:
-            print(f"Migration error: {e}")
+            logger.info(f"Migration error: {e}")

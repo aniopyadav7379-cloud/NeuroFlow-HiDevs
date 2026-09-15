@@ -10,10 +10,11 @@ import mlflow
 from redis.asyncio import Redis
 
 from backend.config import settings
-from backend.db.pool import close_pool, create_pool
+from backend.db.pool import close_pool, create_pool, get_pool
 from backend.providers.base import ChatMessage
 from backend.providers.client import NeuroFlowClient
 from backend.providers.router import RoutingCriteria
+from pipelines.retrieval.pipeline import RetrievalPipeline
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -67,10 +68,34 @@ async def generate_synthetic_test_set(
 
 
 async def run_hyperparameter_search() -> None:
+    """Grid search over retrieval hyperparameters, scored with real MRR@10 computed
+    from actual pipeline.retrieve() calls against a synthetic test set generated
+    from real DB chunks.
+
+    NOTE: this previously "simulated" MRR with a hand-tuned formula plus
+    random.uniform() jitter (explicitly rigged so dense_k=30/sparse_k=15/top_k=10/
+    rrf_k=60 would look best) instead of running retrieval at all. That has been
+    replaced with a real measurement: each combination is scored by actually
+    retrieving with that configuration and checking whether/where the known
+    relevant chunk lands in the ranked results, exactly like evaluation/
+    retrieval_eval.py does for the single-config case.
+    """
     redis_client = Redis(
         host=settings.redis_host, port=settings.redis_port, password=settings.redis_password
     )
+    client = NeuroFlowClient(redis_client)
     await create_pool()
+    pool = get_pool()
+
+    pipeline = RetrievalPipeline(pool, client)
+
+    logger.info("Generating synthetic test set from database chunks...")
+    test_set = await generate_synthetic_test_set(pool, client, num_samples=20)
+    if not test_set:
+        logger.error("No test set available; cannot run hyperparameter search.")
+        await close_pool()
+        await redis_client.aclose()
+        return
 
     # 1. Define the hyperparameter grid
     dense_k_options = [10, 20, 30]
@@ -82,7 +107,7 @@ async def run_hyperparameter_search() -> None:
         itertools.product(dense_k_options, sparse_k_options, top_k_options, rrf_k_options)
     )
 
-    # 2. Randomly sample 20 combinations
+    # 2. Randomly sample 20 combinations to keep the search tractable
     random.shuffle(all_combinations)
     selected_combinations = all_combinations[:20]
 
@@ -116,29 +141,37 @@ async def run_hyperparameter_search() -> None:
                     "sparse_k": sparse_k,
                     "rrf_k": rrf_k,
                     "top_k_after_rerank": top_k,
-                    "use_cache": False # disable cache to truly measure retrieval
+                    "use_cache": False,  # disable cache to truly measure retrieval
                 }
             }
 
-            # Simulate the MRR calculation to avoid OpenAI API failures
-            # Different configurations yield different simulated MRR values
-            # E.g., dense_k=30, sparse_k=15, top_k=10, rrf_k=60 tends to be optimal
-            base_mrr = 0.55
-            if dense_k == 30:
-                base_mrr += 0.05
-            if sparse_k == 15:
-                base_mrr += 0.02
-            if top_k == 10:
-                base_mrr += 0.04
-            if rrf_k == 60:
-                base_mrr += 0.03
+            # Real MRR@10: retrieve with this configuration and rank-score against
+            # the known relevant chunk for each synthetic query.
+            mrr_sum = 0.0
+            evaluated = 0
+            for test in test_set:
+                try:
+                    results = await pipeline.retrieve(
+                        test["query"], k=top_k, config=config
+                    )
+                except Exception as e:
+                    logger.error(f"Retrieval failed for combo {combo}: {e}")
+                    continue
 
-            # Add some slight randomness
-            mrr = base_mrr + random.uniform(-0.02, 0.02)
+                relevant_ids = test["relevant_chunk_ids"]
+                rank = next(
+                    (idx + 1 for idx, r in enumerate(results) if r.chunk_id in relevant_ids),
+                    None,
+                )
+                if rank is not None:
+                    mrr_sum += 1.0 / rank
+                evaluated += 1
+
+            mrr = mrr_sum / evaluated if evaluated else 0.0
 
             mlflow.log_metric("mrr_at_10", mrr)
 
-            logger.info(f"[{i + 1}/20] combo: {combo} | Simulated MRR@10: {mrr:.4f}")
+            logger.info(f"[{i + 1}/20] combo: {combo} | Measured MRR@10: {mrr:.4f}")
 
             if mrr > best_mrr:
                 best_mrr = mrr

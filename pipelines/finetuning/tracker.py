@@ -1,7 +1,12 @@
+import logging
 from typing import Any
 from uuid import UUID
 
 import mlflow
+
+logger = logging.getLogger(__name__)
+
+
 
 
 class FineTuneTracker:
@@ -27,7 +32,7 @@ class FineTuneTracker:
             try:
                 mlflow.log_artifact(f"training_data/{job_id}.jsonl")
             except Exception as e:
-                print(f"Failed to log artifact to MLflow: {e}")
+                logger.info(f"Failed to log artifact to MLflow: {e}")
 
             return run.info.run_id  # type: ignore
 
@@ -44,4 +49,4 @@ class FineTuneTracker:
             try:
                 mlflow.register_model(model_uri, model_name)
             except Exception as e:
-                print(f"Failed to register model in MLflow: {e}")
+                logger.info(f"Failed to register model in MLflow: {e}")

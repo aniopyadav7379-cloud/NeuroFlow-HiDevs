@@ -22,7 +22,7 @@ def sanitize_text(text: str) -> str:
     """Strip HTML from all text inputs."""
     if not text:
         return text
-    return bleach.clean(text, tags=[], strip=True)
+    return str(bleach.clean(text, tags=[], strip=True))
 
 
 def scan_for_prompt_injection(text: str) -> dict | None:  # type: ignore

@@ -1,9 +1,15 @@
 import asyncio
 import json
+import logging
+from typing import Any, cast
 
 import numpy as np
 
 from backend.providers.client import NeuroFlowClient
+
+logger = logging.getLogger(__name__)
+
+
 
 
 class MockRedis:
@@ -15,7 +21,7 @@ async def main() -> None:
     with open("evaluation/calibration/annotated_set.json") as f:  # noqa: ASYNC230
         dataset = json.load(f)
 
-    NeuroFlowClient(MockRedis())
+    NeuroFlowClient(cast(Any, MockRedis()))
 
     # Since we might not have a real API key, we will mock the evaluate_faithfulness by hooking into chat  # noqa: E501
     # Or we can just compute mock automated scores that correlate with human scores
@@ -47,7 +53,7 @@ async def main() -> None:
     else:
         correlation = 1.0
 
-    print(f"Pearson Correlation: {correlation}")
+    logger.info(f"Pearson Correlation: {correlation}")
 
     results = {
         "dataset_size": len(dataset),
@@ -60,9 +66,9 @@ async def main() -> None:
         json.dump(results, f, indent=2)
 
     if correlation > 0.85:
-        print("Calibration successful.")
+        logger.info("Calibration successful.")
     else:
-        print("Calibration failed. Correlation must be > 0.85.")
+        logger.info("Calibration failed. Correlation must be > 0.85.")
 
 
 if __name__ == "__main__":

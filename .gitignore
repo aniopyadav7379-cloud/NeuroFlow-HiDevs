@@ -6,12 +6,27 @@ __pycache__/
 .Python
 env/
 venv/
-.venv/
 .env
-.pytest_cache/
 *.db
 mlruns/
-dummy.txt
-# Local TLS certificates
-infra/nginx/certs/*.key
+
+# Node
+node_modules/
+dist/
+build/
+.npm
+
+# Chroma
+chroma/
+
+# General
+.DS_Store
+*.log
+
+# TLS certificates/keys - see infra/nginx/certs/README.md for how to generate
+# a local dev cert. These must never be committed (infra/nginx/certs/dev.key
+# was previously committed by accident - see docs/runbook.md Section 6).
+*.pem
+*.key
 infra/nginx/certs/*.crt
+!infra/nginx/certs/README.md

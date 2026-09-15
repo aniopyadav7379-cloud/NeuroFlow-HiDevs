@@ -1,8 +1,14 @@
+import logging
+
 import pdfplumber
 import pypdfium2 as pdfium
 import pytesseract
 
 from .base import ExtractedPage
+
+logger = logging.getLogger(__name__)
+
+
 
 
 def extract_pdf(file_path: str) -> list[ExtractedPage]:
@@ -36,7 +42,7 @@ def extract_pdf(file_path: str) -> list[ExtractedPage]:
                             )
                         )
     except Exception as e:
-        print(f"Error extracting tables from PDF: {e}")
+        logger.info(f"Error extracting tables from PDF: {e}")
 
     # 2. Extract text with pypdfium2
     try:
@@ -74,7 +80,7 @@ def extract_pdf(file_path: str) -> list[ExtractedPage]:
                     ocr_text = pytesseract.image_to_string(pil_image, config="--psm 6")
                     content = ocr_text.strip()
                 except Exception as ocr_err:
-                    print(f"OCR failed for page {page_num}: {ocr_err}")
+                    logger.info(f"OCR failed for page {page_num}: {ocr_err}")
 
             if content:
                 pages.append(
@@ -86,7 +92,7 @@ def extract_pdf(file_path: str) -> list[ExtractedPage]:
                     )
                 )
     except Exception as e:
-        print(f"Error reading PDF with pypdfium2: {e}")
+        logger.info(f"Error reading PDF with pypdfium2: {e}")
 
     # Sort pages by page_number, then text over table
     pages.sort(key=lambda p: (p.page_number, p.content_type == "table"))

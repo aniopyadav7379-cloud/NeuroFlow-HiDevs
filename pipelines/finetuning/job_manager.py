@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -8,6 +9,10 @@ from openai import AsyncOpenAI
 
 from backend.config import settings
 from pipelines.finetuning.tracker import FineTuneTracker
+
+logger = logging.getLogger(__name__)
+
+
 
 
 class FineTuneManager:
@@ -20,7 +25,7 @@ class FineTuneManager:
 
     async def submit_finetune_job(self, jsonl_path: str, base_model: str) -> str:
         if not self.client:
-            print("No OpenAI API key, mocking job submission")
+            logger.info("No OpenAI API key, mocking job submission")
             return f"ftjob-{UUID(int=1).hex}"
 
         file_resp = await self.client.files.create(file=open(jsonl_path, "rb"), purpose="fine-tune")  # noqa: ASYNC230
@@ -122,4 +127,4 @@ async def poll_finetune_jobs(ctx: Any) -> Any:  # noqa: ANN401
                     )
 
             except Exception as e:
-                print(f"Error polling finetune job {job_id}: {e}")
+                logger.info(f"Error polling finetune job {job_id}: {e}")

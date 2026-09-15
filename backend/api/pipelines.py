@@ -13,11 +13,22 @@ from backend.models.pipeline import (
 )
 from backend.security.auth import RequireScope
 from backend.security.prompt_injection import sanitize_text
+from backend.services.pipeline_optimizer import PipelineOptimizer
 
-router = APIRouter(prefix="/pipelines", tags=["pipelines"])
+router = APIRouter(prefix="/pipelines", tags=["Admin"])
 
 
-@router.post("", response_model=PipelineResponse)
+@router.post(
+    "",
+    response_model=PipelineResponse,
+    summary="Create a new RAG pipeline",
+    description=(
+        "Creates a new RAG pipeline configuration with specified ingestion, retrieval, "
+        "generation, and evaluation parameters. **Errors**: Returns 400 if a pipeline "
+        "with the same name already exists. Requires 'admin' scope."
+    ),
+    response_description="A JSON object containing the newly created pipeline definition."
+)
 async def create_pipeline(data: PipelineCreate, user: Any = Depends(RequireScope("admin"))) -> Any:  # noqa: ANN401
     pool = get_pool()
     data.config.name = sanitize_text(data.config.name)
@@ -57,7 +68,16 @@ async def create_pipeline(data: PipelineCreate, user: Any = Depends(RequireScope
     return PipelineResponse(**res_dict)
 
 
-@router.get("")
+@router.get(
+    "",
+    summary="List all pipelines",
+    description=(
+        "Retrieves a list of all active (non-archived) RAG pipelines, including aggregate "
+        "metrics like their last run latency and last evaluation score. Useful for building "
+        "admin dashboards."
+    ),
+    response_description="A JSON array of pipeline metadata."
+)
 async def list_pipelines() -> Any:  # noqa: ANN401
     pool = get_pool()
     async with pool.acquire() as conn:
@@ -83,7 +103,18 @@ async def list_pipelines() -> Any:  # noqa: ANN401
         return [dict(r) for r in records]
 
 
-@router.get("/{id}")
+@router.get(
+    "/{id}",
+    summary="Get pipeline details",
+    description=(
+        "Retrieves the full configuration and aggregated historical evaluation scores "
+        "(faithfulness, precision, recall) for a specific pipeline. **Errors**: Returns "
+        "404 if the pipeline does not exist or is archived."
+    ),
+    response_description=(
+        "A JSON object containing the pipeline configuration and aggregated scores."
+    )
+)
 async def get_pipeline(id: UUID = Path(...)) -> Any:  # noqa: ANN401
     pool = get_pool()
     async with pool.acquire() as conn:
@@ -114,7 +145,16 @@ async def get_pipeline(id: UUID = Path(...)) -> Any:  # noqa: ANN401
         return res
 
 
-@router.patch("/{id}")
+@router.patch(
+    "/{id}",
+    summary="Update pipeline configuration",
+    description=(
+        "Updates the configuration of an existing pipeline and increments its version number "
+        "to maintain historical traceability. **Errors**: Returns 404 if the pipeline does "
+        "not exist. Requires 'admin' scope."
+    ),
+    response_description="A JSON object containing the updated pipeline definition."
+)
 async def update_pipeline(
     data: PipelineUpdate,
     id: UUID = Path(...),
@@ -161,7 +201,16 @@ async def update_pipeline(
     return PipelineResponse(**res_dict)
 
 
-@router.delete("/{id}")
+@router.delete(
+    "/{id}",
+    summary="Archive a pipeline",
+    description=(
+        "Soft-deletes a pipeline by setting its status to 'archived'. Archived pipelines "
+        "cannot be queried but retain their historical data for auditing. **Errors**: "
+        "Returns 404 if not found. Requires 'admin' scope."
+    ),
+    response_description="A JSON object confirming the archival status."
+)
 async def delete_pipeline(id: UUID = Path(...), user: Any = Depends(RequireScope("admin"))) -> Any:  # noqa: ANN401
     pool = get_pool()
     async with pool.acquire() as conn:
@@ -174,7 +223,16 @@ async def delete_pipeline(id: UUID = Path(...), user: Any = Depends(RequireScope
     return {"status": "archived", "id": id}
 
 
-@router.get("/{id}/runs", response_model=list[PipelineRunResponse])
+@router.get(
+    "/{id}/runs",
+    response_model=list[PipelineRunResponse],
+    summary="List runs for a pipeline",
+    description=(
+        "Retrieves paginated historical query runs for a specific pipeline, "
+        "ordered from newest to oldest."
+    ),
+    response_description="A JSON array of pipeline run objects."
+)
 async def list_pipeline_runs(
     id: UUID = Path(...), limit: int = Query(50), offset: int = Query(0)
 ) -> Any:  # noqa: ANN401
@@ -194,7 +252,16 @@ async def list_pipeline_runs(
         return [PipelineRunResponse(**dict(r)) for r in records]
 
 
-@router.get("/{id}/analytics")
+@router.get(
+    "/{id}/analytics",
+    summary="Get pipeline analytics",
+    description=(
+        "Generates advanced analytics for a specific pipeline, including P50/P95 latency "
+        "percentiles, average generation latency, aggregated evaluation scores, estimated "
+        "LLM costs based on token counts, and a daily time-series of query volume."
+    ),
+    response_description="A JSON object containing the analytics dashboard metrics."
+)
 async def get_pipeline_analytics(id: UUID = Path(...)) -> Any:  # noqa: ANN401
     pool = get_pool()
     async with pool.acquire() as conn:
@@ -258,10 +325,16 @@ async def get_pipeline_analytics(id: UUID = Path(...)) -> Any:  # noqa: ANN401
         return res
 
 
-from backend.services.pipeline_optimizer import PipelineOptimizer  # noqa: E402
-
-
-@router.post("/{id}/suggestions")
+@router.post(
+    "/{id}/suggestions",
+    summary="Get pipeline optimization suggestions",
+    description=(
+        "Runs the PipelineOptimizer agent to analyze historical metrics and suggest "
+        "architectural improvements (e.g., increasing retrieval `k`, swapping models) "
+        "based on detected anomalies."
+    ),
+    response_description="A JSON object containing an array of actionable suggestions."
+)
 async def get_pipeline_suggestions(id: UUID = Path(...)) -> Any:  # noqa: ANN401
     pool = get_pool()
     optimizer = PipelineOptimizer(pool)

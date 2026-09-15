@@ -5,13 +5,19 @@ import asyncio
 from backend.main import app
 from backend.db.pool import get_pool
 from backend.config import settings
-from arq.worker import Worker
+from arq.worker import create_worker
 from backend.worker import WorkerSettings
 
 @pytest_asyncio.fixture(scope="session")
 async def worker_task():
-    # Start the ARQ worker in the background for integration tests
-    worker = Worker(**WorkerSettings.__dict__)
+    # Start the ARQ worker in the background for integration tests.
+    # NOTE: this previously did Worker(**WorkerSettings.__dict__), which passes
+    # class metadata (__module__, __dict__, __weakref__, __doc__, ...) through as
+    # keyword arguments and breaks with "unexpected keyword argument '__module__'"
+    # on this arq version. arq's own create_worker() helper filters WorkerSettings
+    # down to only the real settings attributes it understands, so it's both safer
+    # and version-compatible.
+    worker = create_worker(WorkerSettings)
     task = asyncio.create_task(worker.main())
     # Give it a second to connect
     await asyncio.sleep(1)

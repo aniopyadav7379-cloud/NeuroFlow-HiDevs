@@ -37,6 +37,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # detect-secrets-hook below diffs against HEAD~1, which requires the
+          # immediate parent commit to exist locally. actions/checkout@v4
+          # defaults to fetch-depth: 1 (a shallow clone containing only the
+          # current commit), so `git diff --name-only HEAD~1` fails with
+          # "unknown revision or path not in the working tree" on every run.
+          # fetch-depth: 2 fetches just enough history for that diff to work.
+          fetch-depth: 2
       - run: pip install detect-secrets pip-audit
       - run: detect-secrets-hook --baseline .secrets.baseline $(git diff --name-only HEAD~1)
       - run: pip-audit -r backend/requirements.txt

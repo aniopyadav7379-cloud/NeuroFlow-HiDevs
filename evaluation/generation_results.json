@@ -1,10 +1,7 @@
 {
-  "status": "unavailable",
-  "reason": "no_ingested_chunks",
-  "detail": "No chunks found in the database. Please run ingestion first.",
-  "faithfulness": null,
-  "answer_relevance": null,
-  "context_precision": null,
-  "overall_score": null,
+  "faithfulness": 0,
+  "answer_relevance": 0,
+  "context_precision": 0,
+  "overall_score": 0,
   "num_samples": 0
 }

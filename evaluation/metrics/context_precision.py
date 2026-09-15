@@ -1,8 +1,13 @@
+import logging
 from typing import Any
 
 from backend.providers.base import ChatMessage
 from backend.providers.client import NeuroFlowClient
 from backend.providers.router import RoutingCriteria
+
+logger = logging.getLogger(__name__)
+
+
 
 
 async def evaluate_context_precision(
@@ -39,7 +44,7 @@ async def evaluate_context_precision(
             else:
                 useful_flags.append(0.0)
         except Exception as e:
-            print(f"Error checking chunk usefulness: {e}")
+            logger.info(f"Error checking chunk usefulness: {e}")
             useful_flags.append(0.0)
 
     # Compute rank-weighted proportion:

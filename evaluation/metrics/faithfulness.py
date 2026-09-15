@@ -1,9 +1,14 @@
 import json
+import logging
 from typing import Any
 
 from backend.providers.base import ChatMessage
 from backend.providers.client import NeuroFlowClient
 from backend.providers.router import RoutingCriteria
+
+logger = logging.getLogger(__name__)
+
+
 
 
 async def evaluate_faithfulness(
@@ -40,7 +45,7 @@ async def evaluate_faithfulness(
         if not isinstance(claims, list):
             claims = []
     except Exception as e:
-        print(f"Error extracting claims: {e}")
+        logger.info(f"Error extracting claims: {e}")
         return 0.0
 
     if not claims:

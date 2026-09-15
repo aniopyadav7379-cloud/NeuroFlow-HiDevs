@@ -64,6 +64,14 @@ from pipelines.finetuning.job_manager import poll_finetune_jobs  # noqa: E402
 
 
 class WorkerSettings:
+    # NOTE: backend/api/ingest.py enqueues ingestion jobs with
+    # _queue_name="queue:ingest" (redis.enqueue_job(..., _queue_name="queue:ingest")).
+    # Without setting queue_name here to match, this worker defaults to arq's
+    # "arq:queue" and would never consume from "queue:ingest" at all - every
+    # ingestion job would sit in Redis forever (until it expires) and never be
+    # processed, while the API would report the upload as accepted. This was a
+    # complete, silent break of the ingestion pipeline.
+    queue_name = "queue:ingest"
     functions = [process_document]
     cron_jobs = [cron(poll_finetune_jobs, second=0)]
     redis_settings = RedisSettings(

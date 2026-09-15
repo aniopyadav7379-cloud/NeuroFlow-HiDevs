@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.config import settings
 from backend.db.pool import get_pool
@@ -13,12 +13,22 @@ from pipelines.finetuning.extractor import FineTuneExtractor
 from pipelines.finetuning.job_manager import FineTuneManager
 from pipelines.finetuning.tracker import FineTuneTracker
 
-router = APIRouter(prefix="/finetune", tags=["finetune"])
-
+router = APIRouter(prefix="/finetune", tags=["Fine-Tuning"])
 
 class FineTuneRequest(BaseModel):
-    base_model: str = "gpt-3.5-turbo-0613"
-    format: str = "sft"  # "sft" or "dpo"
+    base_model: str = Field(
+        "gpt-3.5-turbo-0613", 
+        description="The base LLM to fine-tune (e.g., an OpenAI base model).",
+        examples=["gpt-3.5-turbo-0613"]
+    )
+    format: str = Field(
+        "sft", 
+        description=(
+            "The fine-tuning format: 'sft' (Supervised Fine-Tuning) "
+            "or 'dpo' (Direct Preference Optimization)."
+        ),
+        examples=["sft"]
+    )
 
 
 async def get_redis() -> Any:  # noqa: ANN401
@@ -32,7 +42,17 @@ async def get_redis() -> Any:  # noqa: ANN401
         await client.aclose()
 
 
-@router.post("/jobs")
+@router.post(
+    "/jobs",
+    summary="Create a new fine-tuning job",
+    description=(
+        "Analyzes historical high-quality evaluation runs to automatically extract a dataset "
+        "of query/context/answer pairs, and submits them to the upstream LLM provider to "
+        "create a fine-tuned model. **Errors**: Returns 400 if there are fewer than 10 "
+        "valid training pairs. Requires 'admin' scope."
+    ),
+    response_description="A JSON object containing the internal job_id and the provider_job_id."
+)
 async def create_finetune_job(
     req: FineTuneRequest,
     db_pool: Any = Depends(get_pool),  # noqa: ANN401
@@ -92,7 +112,15 @@ async def create_finetune_job(
     return {"job_id": job_id, "provider_job_id": provider_job_id, "status": "pending"}
 
 
-@router.get("/jobs")
+@router.get(
+    "/jobs",
+    summary="List fine-tuning jobs",
+    description=(
+        "Retrieves a list of all historical fine-tuning jobs and their current processing "
+        "status from the upstream provider. Requires 'admin' scope."
+    ),
+    response_description="A JSON array of fine-tuning job metadata."
+)
 async def list_finetune_jobs(
     db_pool: Any = Depends(get_pool),  # noqa: ANN401
     user: Any = Depends(RequireScope("admin")),  # noqa: ANN401
@@ -104,7 +132,16 @@ async def list_finetune_jobs(
     return [dict(r) for r in records]
 
 
-@router.get("/jobs/{job_id}")
+@router.get(
+    "/jobs/{job_id}",
+    summary="Get fine-tuning job details",
+    description=(
+        "Fetches detailed metadata about a specific fine-tuning job, including its upstream "
+        "provider ID and MLflow tracking URL. **Errors**: Returns 404 if the job is not found. "
+        "Requires 'admin' scope."
+    ),
+    response_description="A JSON object of the fine-tuning job details."
+)
 async def get_finetune_job(
     job_id: UUID,
     db_pool: Any = Depends(get_pool),  # noqa: ANN401
@@ -120,7 +157,16 @@ async def get_finetune_job(
     return job_data
 
 
-@router.get("/training-data/preview")
+@router.get(
+    "/training-data/preview",
+    summary="Preview extracted training data",
+    description=(
+        "Simulates the data extraction process to show a preview of up to 5 training pairs "
+        "that would be used for a fine-tuning job. Extremely useful for verifying data quality "
+        "before initiating a costly fine-tuning run. Requires 'admin' scope."
+    ),
+    response_description="A JSON array of up to 5 structured training pairs."
+)
 async def preview_training_data(
     format: str = "sft",
     db_pool: Any = Depends(get_pool),  # noqa: ANN401
