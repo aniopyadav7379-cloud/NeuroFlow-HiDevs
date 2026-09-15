@@ -1,0 +1,7 @@
+{
+  "dense_k": 30,
+  "sparse_k": 15,
+  "rrf_k": 60,
+  "top_k_after_rerank": 8,
+  "use_cache": false
+}

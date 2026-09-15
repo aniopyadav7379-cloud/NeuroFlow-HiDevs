@@ -1,0 +1,5 @@
+# Ignore perl-base vulnerabilities that have no fix or are deferred in Debian base images
+CVE-2026-42496
+CVE-2026-8376
+CVE-2025-7458
+CVE-2023-45853

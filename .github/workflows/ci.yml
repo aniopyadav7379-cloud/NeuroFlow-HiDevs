@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install -r backend/requirements.txt
+      - run: pip install ruff mypy types-bleach pandas-stubs
+      - run: ruff check backend/ pipelines/ evaluation/
+      - run: mypy --explicit-package-bases --ignore-missing-imports backend/ pipelines/ evaluation/
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env: {POSTGRES_PASSWORD: testpassword, POSTGRES_DB: neuroflow_test}
+      redis:
+        image: redis:7-alpine
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -r backend/requirements.txt
+      - run: python -m pytest tests/unit/ -v --cov=backend --cov=pipelines --cov=evaluation --cov-report=xml
+      - uses: codecov/codecov-action@v4
+        with: {file: coverage.xml}
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # detect-secrets-hook below diffs against HEAD~1, which requires the
+          # immediate parent commit to exist locally. actions/checkout@v4
+          # defaults to fetch-depth: 1 (a shallow clone containing only the
+          # current commit), so `git diff --name-only HEAD~1` fails with
+          # "unknown revision or path not in the working tree" on every run.
+          # fetch-depth: 2 fetches just enough history for that diff to work.
+          fetch-depth: 2
+      - run: pip install detect-secrets pip-audit
+      - run: detect-secrets-hook --baseline .secrets.baseline $(git diff --name-only HEAD~1)
+      - run: pip-audit -r backend/requirements.txt
+      - run: npm audit --prefix frontend --audit-level=high

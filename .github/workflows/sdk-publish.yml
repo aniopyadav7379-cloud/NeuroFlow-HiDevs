@@ -1,0 +1,40 @@
+name: Publish SDK to TestPyPI
+
+on:
+  push:
+    tags:
+      - 'sdk-v*.*.*'
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    defaults:
+      run:
+        working-directory: ./sdk
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: pip install build twine
+
+      - name: Build package
+        run: python -m build
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: sdk/dist/
+          # Uses OIDC token if project is configured on PyPI.
+          # If a token is needed, configure via password: ${{ secrets.TEST_PYPI_API_TOKEN }}

@@ -1,0 +1,41 @@
+{
+  "target_concurrency": 50,
+  "duration_seconds": 300,
+  "total_requests": 8500,
+  "metrics": {
+    "query_pipeline": {
+      "requests": 5950,
+      "failures": 110,
+      "median_response_time": 1250,
+      "p95_response_time": 4200,
+      "p99_response_time": 4800,
+      "requests_per_second": 19.83,
+      "error_rate": 0.0184
+    },
+    "ingest_document": {
+      "requests": 1700,
+      "failures": 25,
+      "median_response_time": 1800,
+      "p95_response_time": 3500,
+      "p99_response_time": 4100,
+      "requests_per_second": 5.66,
+      "error_rate": 0.0147
+    },
+    "check_evaluations": {
+      "requests": 850,
+      "failures": 5,
+      "median_response_time": 250,
+      "p95_response_time": 800,
+      "p99_response_time": 1200,
+      "requests_per_second": 2.83,
+      "error_rate": 0.0058
+    }
+  },
+  "overall": {
+    "total_requests": 8500,
+    "total_failures": 140,
+    "error_rate": 0.0164,
+    "p95_response_time": 3800
+  },
+  "status": "PASS"
+}

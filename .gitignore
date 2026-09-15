@@ -4,54 +4,29 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
-*.egg-info/
-.eggs/
-build/
-dist/
-.venv/
-venv/
 env/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
+venv/
+.env
+*.db
+mlruns/
 
 # Node
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
 dist/
-.next/
-.nuxt/
-.turbo/
+build/
+.npm
 
-# Env / secrets
-.env
-.env.*
-!.env.example
+# Chroma
+chroma/
+
+# General
+.DS_Store
+*.log
+
+# TLS certificates/keys - see infra/nginx/certs/README.md for how to generate
+# a local dev cert. These must never be committed (infra/nginx/certs/dev.key
+# was previously committed by accident - see docs/runbook.md Section 6).
 *.pem
 *.key
-
-# Databases / vector stores
-*.db
-*.sqlite3
-chroma/
-mlruns/
-mlartifacts/
-
-# OS / editor
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-*.swp
-
-# Logs
-*.log
-logs/
-
-# Fine-tune artifacts
-*.jsonl.tmp
-finetune-data/*.jsonl
-!finetune-data/.gitkeep
+infra/nginx/certs/*.crt
+!infra/nginx/certs/README.md

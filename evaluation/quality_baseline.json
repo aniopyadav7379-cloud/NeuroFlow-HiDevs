@@ -1,0 +1,15 @@
+{
+  "retrieval": {
+    "hit_rate_at_10": 0.7600,
+    "mrr_at_10": 0.5200
+  },
+  "generation": {
+    "faithfulness": 0.7200,
+    "answer_relevance": 0.6800,
+    "context_precision": 0.6500,
+    "overall_score": 0.6833
+  },
+  "latency": {
+    "p95_query_latency_seconds": 6.2
+  }
+}

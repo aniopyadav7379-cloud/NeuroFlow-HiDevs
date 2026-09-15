@@ -1,169 +1,131 @@
 # NeuroFlow Architecture
 
-This document defines the five core subsystems of NeuroFlow, their data flows, and the contracts between them. Every downstream implementation task treats these boundaries as fixed.
-
----
+NeuroFlow is designed with five core architectural subsystems to handle end-to-end ingestion, retrieval, generation, evaluation, and fine-tuning.
 
 ## 1. Ingestion Subsystem
 
-**Responsibility:** turn raw, heterogeneous input (files or URLs) into queryable vectors, with full provenance retained.
+The Ingestion Subsystem is responsible for accepting raw files (PDF, DOCX, images, CSV, web URLs), extracting content per modality, chunking it, embedding it, and writing to the vector store.
 
-**Stages**
-
-1. **Upload / Fetch** — client calls `POST /ingest` with a file or URL. Request is written to an `ingestion_jobs` row (`status=pending`) and the file is placed in object storage; the endpoint returns immediately with a `job_id`.
-2. **Modality routing** — a worker picks up the job and routes by MIME type / URL type:
-   - PDF → text + layout extraction (page-aware), OCR fallback for scanned pages
-   - DOCX → structured text + heading hierarchy extraction
-   - Images → OCR + optional image captioning for non-text images
-   - CSV → row-wise structured extraction, schema inferred and stored as metadata
-   - Web URL → HTML fetch → readability extraction → boilerplate stripped
-3. **Normalization** — all modalities converge on a common `ExtractedDocument` object: `{ text, sections[], metadata{source, mime, page/row refs} }`.
-4. **Chunking** — per `adr/002-chunking-strategy.md`, producing `Chunk{ text, doc_id, ordinal, char_span, metadata }`.
-5. **Embedding** — each chunk is embedded (batched) with the active embedding model; embedding model version is stamped on every chunk so re-embedding on model upgrade is a traceable migration, not a silent drift.
-6. **Write** — chunk text, metadata, and vector are written to Postgres/pgvector in a single transaction per batch; `ingestion_jobs.status` moves to `complete` (or `failed` with error detail) and full-text search indexes are updated in the same transaction.
-
-**Data flow**
+**Data Flow:**
+1. **File Upload**: User uploads file via API.
+2. **Modality Router**: Identifies file type and routes to specific parsers.
+3. **Extraction**: Content is extracted (e.g., text from PDF, OCR from images).
+4. **Chunking**: Extracted content is broken down using a specified chunking strategy (see ADR-002).
+5. **Embedding**: Chunks are passed through an embedding model.
+6. **Vector Store**: Embeddings and metadata are written to the Vector Store (pgvector, see ADR-001).
 
 ```mermaid
-flowchart LR
-    A[File / URL] -->|POST /ingest| B(Ingestion Job Queue)
-    B --> C{Modality Router}
-    C -->|PDF| D1[PDF Extractor]
-    C -->|DOCX| D2[DOCX Extractor]
-    C -->|Image| D3[OCR / Caption]
-    C -->|CSV| D4[Row Extractor]
-    C -->|URL| D5[HTML Extractor]
-    D1 & D2 & D3 & D4 & D5 --> E[ExtractedDocument]
-    E --> F[Chunker]
-    F --> G[Embedder]
-    G --> H[(Postgres + pgvector\nchunks table)]
-    H --> I[First queryable vector]
+graph TD
+    A[Raw File/URL] --> B[Modality Router]
+    B --> C[Text Parser]
+    B --> D[Image/OCR Parser]
+    B --> E[Document Parser]
+    C --> F[Chunker]
+    D --> F
+    E --> F
+    F --> G[Embedding Model]
+    G --> H[(Vector Store - pgvector)]
 ```
-
-**Failure handling:** each stage is idempotent per `job_id`; a failed chunk-embed batch retries with backoff, and a job is only marked `complete` once every chunk for that document has a vector — partial ingestion is never exposed to retrieval.
-
----
 
 ## 2. Retrieval Subsystem
 
-**Responsibility:** given a user query, return the best possible ranked context window within latency budget.
+The Retrieval Subsystem executes when a user query is received. It performs parallel searches and reranking to construct a highly relevant context window.
 
-**Stages**
-
-1. **Query understanding** — light preprocessing (query embedding, optional query expansion/rewrite for very short queries).
-2. **Parallel candidate generation** (fan-out, run concurrently):
-   - **Vector search** — cosine similarity over pgvector, top-K (default K=50)
-   - **Keyword search** — Postgres full-text search (`tsvector`), top-K
-   - **Metadata filter** — structured filters (source, date range, doc type) applied as a pre-filter or post-filter depending on selectivity
-3. **Fusion** — candidates merged via **Reciprocal Rank Fusion**: `score(d) = Σ 1 / (k + rank_i(d))` across the vector and keyword result lists (k=60 default), producing a single ranked list without needing score normalization across heterogeneous scoring systems.
-4. **Reranking** — top N (default N=30) fused candidates are passed through a cross-encoder reranker that scores (query, chunk) pairs jointly for higher precision than bi-encoder similarity alone.
-5. **Context window assembly** — top M (default M=8, budget-aware by token count) reranked chunks are ordered and packed into the final context window, deduplicated by document to avoid redundant context.
-
-**Data flow**
+**Data Flow:**
+1. **User Query**: Incoming text query.
+2. **Parallel Search**:
+   - Embedding Similarity Search (Dense)
+   - Keyword Search (Sparse / BM25)
+   - Metadata Filtering
+3. **Fusion**: Results are merged using Reciprocal Rank Fusion (RRF).
+4. **Reranking**: A cross-encoder reranker scores the fused results against the query.
+5. **Context Window**: Top-K results are returned as the context window.
 
 ```mermaid
-flowchart LR
-    Q[User Query] --> QE[Query Embedding]
-    QE --> V[Vector Search]
-    Q --> K[Keyword Search]
-    Q --> M[Metadata Filter]
-    V --> R[Reciprocal Rank Fusion]
-    K --> R
-    M --> R
-    R --> X[Cross-Encoder Reranker]
-    X --> W[Context Window\ntop-M chunks]
+graph TD
+    Q[User Query] --> S1[Embedding Search]
+    Q --> S2[Keyword Search]
+    Q --> S3[Metadata Filter]
+    S1 --> R[Reciprocal Rank Fusion]
+    S2 --> R
+    S3 --> R
+    R --> C[Cross-Encoder Reranker]
+    C --> CW[Ranked Context Window]
 ```
-
----
 
 ## 3. Generation Subsystem
 
-**Responsibility:** turn a context window + query into a grounded, streamed answer, fully logged for evaluation.
+The Generation Subsystem takes the retrieved context window and the user query to produce an answer via the appropriate LLM.
 
-**Stages**
-
-1. **Prompt assembly** — system prompt + context window (with citation markers per chunk) + query + conversation history (if any).
-2. **Model routing** — per `adr/004-model-routing.md`, route to a model tier based on query complexity, domain, cost budget, and latency SLA. Routing decision itself is logged.
-3. **Streaming** — response streamed token-by-token over SSE (`GET /query/{query_id}/stream`); client renders incrementally.
-4. **Logging** — on completion, the full record — query, routed model, context chunk IDs used, prompt, full response, latency, token counts, cost — is written to `generations` for the Evaluation Subsystem to consume asynchronously.
-
-**Data flow**
+**Data Flow:**
+1. **Prompt Assembly**: The context window and query are injected into a prompt template.
+2. **Model Router**: Decides which LLM to use based on cost, capability, and domain (see ADR-004).
+3. **Generation**: The chosen LLM generates the response.
+4. **Streaming**: The response is streamed token-by-token back to the client via SSE.
+5. **Logging**: The complete Input/Output pair, along with metadata, is logged to PostgreSQL for evaluation.
 
 ```mermaid
-flowchart LR
-    W[Context Window] --> P[Prompt Assembly]
-    Q2[Query] --> P
-    P --> RT{Model Router}
-    RT -->|tier A| M1[Fast/cheap model]
-    RT -->|tier B| M2[Balanced model]
-    RT -->|tier C| M3[Frontier model]
-    RT -->|fine-tuned| M4[Fine-tuned model]
-    M1 & M2 & M3 & M4 --> S[Token Stream / SSE]
-    S --> C2[Client]
-    M1 & M2 & M3 & M4 --> L[(generations log)]
+graph TD
+    A[User Query] --> B[Prompt Assembly]
+    C[Ranked Context Window] --> B
+    B --> D[Model Router]
+    D --> E[Tier 1: Fast/Cheap LLM]
+    D --> F[Tier 2: Fine-Tuned LLM]
+    D --> G[Tier 3: Heavy Reasoning LLM]
+    E --> H[Generation]
+    F --> H
+    G --> H
+    H --> I[SSE Stream to Client]
+    H --> J[(PostgreSQL - Evaluation Log)]
 ```
-
----
 
 ## 4. Evaluation Subsystem
 
-**Responsibility:** score every generation asynchronously, without adding latency to the user-facing path.
+The Evaluation Subsystem asynchronously scores every generation using an LLM-as-a-judge approach (see ADR-003).
 
-**Stages**
-
-1. **Trigger** — a `generations` row insert enqueues an evaluation job (outbox pattern — evaluation is decoupled from the request/response cycle entirely).
-2. **LLM-as-judge scoring** — four scores computed per generation:
-   - **Faithfulness** — are claims in the answer entailed by the retrieved context? (claim decomposition + entailment check against context)
-   - **Answer relevance** — does the answer address the actual question asked? (judge model scores query↔answer alignment, independent of context)
-   - **Context precision** — of the chunks retrieved, what fraction were actually used/relevant to the answer?
-   - **Context recall** — of the information needed to answer well, what fraction was present in the retrieved chunks? (requires a reference answer or ground-truth signal where available; otherwise estimated)
-3. **Persistence** — scores written to Postgres (`evaluations` table), keyed to `generation_id`.
-4. **Aggregation** — a rolling job computes windowed aggregates (1h/24h/7d) per model, per pipeline, per domain, exposed via `GET /evaluations/aggregate`.
-
-**Data flow**
+**Data Flow:**
+1. **Async Trigger**: Triggered when a generation completes.
+2. **Scoring**: Computes metrics:
+   - **Faithfulness**: Are claims grounded in the retrieved context?
+   - **Answer Relevance**: Does it address the question?
+   - **Context Precision**: Are retrieved chunks actually used?
+   - **Context Recall**: Were all relevant chunks retrieved?
+3. **Storage**: Stores scores in PostgreSQL.
+4. **Aggregation**: Computes rolling aggregates to monitor system health over time.
 
 ```mermaid
-flowchart LR
-    G[(generations log)] --> J[Eval Job Queue]
-    J --> F1[Faithfulness Judge]
-    J --> F2[Answer Relevance Judge]
-    J --> F3[Context Precision Judge]
-    J --> F4[Context Recall Judge]
-    F1 & F2 & F3 & F4 --> EV[(evaluations table)]
-    EV --> AG[Rolling Aggregator]
-    AG --> API[GET /evaluations/aggregate]
+graph TD
+    A[Generation Completes] --> B[Async Evaluation Trigger]
+    B --> C[LLM-as-a-Judge]
+    C --> D[Score: Faithfulness]
+    C --> E[Score: Answer Relevance]
+    C --> F[Score: Context Precision]
+    C --> G[Score: Context Recall]
+    D --> H[(PostgreSQL)]
+    E --> H
+    F --> H
+    G --> H
+    H --> I[Rolling Aggregates Computation]
 ```
-
----
 
 ## 5. Fine-Tuning Subsystem
 
-**Responsibility:** close the loop — turn proven-good generations into training data, and promote fine-tuned models when they actually outperform base.
+The Fine-Tuning Subsystem continuously improves the system by training on high-quality outputs.
 
-**Stages**
-
-1. **Mining** — a scheduled job queries `evaluations JOIN generations` for rows where `faithfulness > 0.8 AND user_rating >= 4`, grouped by domain/pipeline.
-2. **Formatting** — mined (query, context, answer) triples are formatted as JSONL prompt/completion pairs, deduplicated, and capped in size per training run.
-3. **Job submission** — `POST /finetune/jobs` submits the JSONL dataset to the fine-tuning provider; job metadata (base model, dataset hash, hyperparameters) is recorded.
-4. **Experiment tracking** — MLflow logs the run: dataset version, hyperparameters, eval-set metrics (faithfulness/relevance deltas vs. base model on a held-out set).
-5. **Promotion (champion/challenger)** — the fine-tuned model is shadow-evaluated against the base model on recent live traffic; it is only routed live traffic (via the Generation Subsystem's router) once it beats the base model's aggregate eval scores by a defined margin on a minimum sample size. Until then it stays in shadow mode.
-
-**Data flow**
+**Data Flow:**
+1. **Extraction**: Queries the evaluation log for pairs where `faithfulness > 0.8` AND `user_rating >= 4`.
+2. **Formatting**: Formats the pairs into JSONL.
+3. **Job Submission**: Submits jobs to the fine-tuning service.
+4. **Tracking**: Logs experiments, hyper-parameters, and metrics in MLflow.
+5. **Deployment**: Updates the Model Router to direct similar queries to the fine-tuned model if it outperforms the base model.
 
 ```mermaid
-flowchart LR
-    EV2[(evaluations + generations)] --> MN[Miner\nfaithfulness>0.8 AND rating>=4]
-    MN --> FMT[JSONL Formatter]
-    FMT --> SJ[POST /finetune/jobs]
-    SJ --> MLF[MLflow Experiment Tracking]
-    MLF --> SH[Shadow Evaluation\nvs base model]
-    SH -->|wins by margin| PR[Promote: Router\nsends live traffic]
-    SH -->|does not win| HOLD[Stay in shadow]
+graph TD
+    A[(PostgreSQL - Evaluation Log)] --> B{Filter: Faithfulness > 0.8 \n AND User Rating >= 4}
+    B -- Yes --> C[Extract Prompt/Completion Pairs]
+    C --> D[Format as JSONL]
+    D --> E[Submit Fine-Tuning Job]
+    E --> F[MLflow - Track Experiment]
+    F --> G[Deploy Fine-Tuned Model]
+    G --> H[Update Model Router]
 ```
-
----
-
-## Cross-cutting notes
-
-- Every subsystem writes structured logs keyed by `job_id` / `query_id` / `generation_id` so a single request can be traced end-to-end across ingestion → retrieval → generation → evaluation → fine-tune mining.
-- All subsystems are horizontally scalable workers behind queues except the synchronous request/response path (`POST /query` → streamed generation), which is the only latency-sensitive path — ingestion, evaluation, and fine-tuning are all async by design.
