@@ -1,4 +1,4 @@
-# NeuroFlow Production Deployment Guide (Railway)
+﻿# NeuroFlow Production Deployment Guide (Railway)
 
 This runbook provides step-by-step instructions for deploying NeuroFlow to Railway, a modern PaaS that perfectly supports our multi-service Docker architecture and provides managed Postgres (with pgvector) and Redis databases.
 
@@ -92,7 +92,7 @@ If a production deployment fails the verification checklist or introduces critic
 ### B. Reverse Database Migrations (If applicable)
 *If the failed deployment included schema changes that break the older code version:*
 1. Connect to the production PostgreSQL database via terminal:
-   `psql "postgres://user:pass@containers-us-west.railway.app:5432/railway"`
+   `psql "postgres://user:pass@containers-us-west.railway.app:5432/railway"` # pragma: allowlist secret
 2. Manually execute the necessary `ALTER TABLE` / `DROP` statements to revert the schema to the previous state.
 3. *Note: Data loss may occur if the rollback drops columns containing new user data. Always backup before manual rollbacks.*
 
@@ -100,3 +100,4 @@ If a production deployment fails the verification checklist or introduces critic
 1. Re-run the `curl https://your-app.railway.app/health` check.
 2. Verify the application logs in Railway show no immediate startup errors.
 3. Re-run the Query generation check to ensure the previous version is fully operational.
+

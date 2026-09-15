@@ -1,4 +1,4 @@
-# NeuroFlow Python SDK
+﻿# NeuroFlow Python SDK
 
 An async Python client for the NeuroFlow RAG API (ingestion, retrieval,
 generation, streaming, and evaluation).
@@ -21,7 +21,7 @@ from neuroflow import NeuroFlowClient
 
 client = NeuroFlowClient(
     base_url="http://localhost:8000",  # or your deployment's URL
-    api_key="your-token",              # sent as Authorization: Bearer <token>
+    api_key="your-token",              # sent as Authorization: Bearer <token>  # pragma: allowlist secret
     timeout=30.0,                      # per-request httpx timeout, in seconds
 )
 ```
@@ -176,3 +176,4 @@ The backend exposes a full OpenAPI schema at `/openapi.json` (interactive
 docs at `/docs`) once running - that is the source of truth for request/
 response shapes; this SDK wraps a subset of it (ingestion, querying,
 streaming, evaluations, and basic pipeline management).
+
