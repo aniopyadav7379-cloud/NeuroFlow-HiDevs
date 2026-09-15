@@ -111,7 +111,7 @@ MarkupSafe==3.0.3
 matplotlib==3.10.8
 matplotlib-inline==0.2.2
 mccabe==0.7.0
-mistune==3.3.0
+mistune==3.3.3
 msgpack==1.2.1
 mypy==2.1.0
 mypy_extensions==1.1.0
